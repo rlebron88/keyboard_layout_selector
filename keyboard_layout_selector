@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+
+import sys, os, subprocess, fileinput, re, time, tkinter
+from tkinter import messagebox
+
+evdev_lst = '/usr/share/X11/xkb/rules/evdev.lst'
+
+def get_keyboard_layouts():
+    global evdev_lst
+    keyboards = dict()
+    if os.path.isfile(evdev_lst):
+        __save = False
+        with open(evdev_lst, 'rt') as handle:
+            for line in handle:
+                if line.startswith('! layout'):
+                    __save = True
+                elif line.startswith('!'):
+                    __save = False
+                elif all([__save, line.strip()]):
+                    __key, __value = (re.split('\s{2,}', line.strip()))[::-1]
+                    keyboards[__key] = __value
+        return keyboards
+    else:
+        return keyboards
+
+class Keyboard_layout_setting(object):
+    def __init__(self, master = None, title = "Keyboard Layout Selector", message = "Restart required. Do it now?", value = None):
+        self.master = master
+        if not self.master:
+            self.master = tkinter.Tk()
+        self.master.withdraw()
+        self.title = title
+        self.message = message
+        self.value = value
+        self.modal_panel = tkinter.Toplevel(self.master)
+        self.modal_panel.bind("<Return>", self.__yes)
+        self.modal_panel.bind("<Escape>", self.__no)
+        self.label = None
+        if self.title:
+            self.modal_panel.title(self.title)
+        if self.message:
+            self.label = tkinter.Label(self.modal_panel, text = self.message)
+            self.label.pack(padx = 5, pady = 5)
+        self.button_frame = tkinter.Frame(self.modal_panel)
+        self.button_frame.pack(side = tkinter.BOTTOM, padx = 5, pady = 5)
+        self.yes_button = tkinter.Button(self.button_frame, text = "Yes", command = self.__yes)
+        self.yes_button.pack(side = tkinter.LEFT)
+        self.no_button = tkinter.Button(self.button_frame, text = "No", command = self.__no)
+        self.no_button.pack(side = tkinter.LEFT)
+        try:
+            subprocess.call(["gsettings", "set", "org.gnome.settings-daemon.plugins.keyboard", "active", "false"], stdout = subprocess.DEVNULL, stderr = subprocess.DEVNULL)
+        except:
+            pass
+        subprocess.call(["localectl", "set-keymap", value], stdout = subprocess.DEVNULL, stderr = subprocess.DEVNULL)
+    def wait(self):
+        self.master.wait_window(self.modal_panel)
+        return self.value
+    def __yes(self, event = None):
+        subprocess.call(["reboot"], stdout = subprocess.DEVNULL, stderr = subprocess.DEVNULL)
+    def __no(self, event = None):
+        self.modal_panel.destroy()
+
+class Keyboard_layout_selector(object):
+    def __init__(self, master = tkinter.Tk(), title = "Keyboard Layout Selector", message = "Choose your keyboard layout", options = get_keyboard_layouts()):
+        self.master = master
+        self.master.withdraw()
+        self.title = title
+        self.message = message
+        self.options = options
+        self.value = None
+        self.modal_panel = tkinter.Toplevel(self.master)
+        self.modal_panel.bind("<Return>", self.__choose)
+        self.modal_panel.bind("<Escape>", self.__cancel)
+        self.label = None
+        if self.title:
+            self.modal_panel.title(self.title)
+        if self.message:
+            self.label = tkinter.Label(self.modal_panel, text = self.message)
+            self.label.pack(padx = 5, pady = 5)
+        self.list_frame = tkinter.Frame(self.modal_panel)
+        self.list_frame.pack(side = tkinter.TOP, padx = 5, pady = 5)
+        self.scrollbar = tkinter.Scrollbar(self.list_frame)
+        self.scrollbar.pack(side = tkinter.RIGHT, fill = tkinter.Y)
+        self.listbox = tkinter.Listbox(self.list_frame, selectmode = tkinter.SINGLE)
+        self.listbox.pack(side = tkinter.LEFT, fill = tkinter.Y)
+        self.scrollbar.config(command = self.listbox.yview)
+        self.listbox.config(yscrollcommand = self.scrollbar.set)
+        self.__sorted_keys = sorted(list(self.options.keys()))
+        for key in self.__sorted_keys:
+            self.listbox.insert(tkinter.END, key)
+        self.button_frame = tkinter.Frame(self.modal_panel)
+        self.button_frame.pack(side = tkinter.BOTTOM, padx = 5, pady = 5)
+        self.choose_button = tkinter.Button(self.button_frame, text = "Choose", command = self.__choose)
+        self.choose_button.pack(side = tkinter.LEFT)
+        self.try_button = tkinter.Button(self.button_frame, text = "Try", command = self.__try)
+        self.try_button.pack(side = tkinter.LEFT)
+        self.cancel_button = tkinter.Button(self.button_frame, text = "Cancel", command = self.__cancel)
+        self.cancel_button.pack(side = tkinter.LEFT)
+    def wait(self):
+        self.master.wait_window(self.modal_panel)
+        return self.value
+    def __choose(self, event = None):
+        try:
+            index = int(self.listbox.curselection()[0])
+            self.value = self.options[self.__sorted_keys[index]]
+        except IndexError:
+            self.value = None
+        value = Keyboard_layout_setting(value = self.value).wait()
+        self.modal_panel.destroy()
+    def __try(self, event = None):
+        index = int(self.listbox.curselection()[0])
+        self.value = self.options[self.__sorted_keys[index]]
+        subprocess.call(["gkbd-keyboard-display", "-l", self.value], stdout = subprocess.DEVNULL, stderr = subprocess.DEVNULL)
+    def __cancel(self, event = None):
+        self.value = None
+        self.modal_panel.destroy()
+
+if __name__ == '__main__':
+    Keyboard_layout_selector().wait()
